@@ -36,4 +36,7 @@ When you get to Wifi credentials put your SSID where it says "put your SSID" put
 where it says "Put the password of your SSID" put the password of your SSID
 
 
+Now im going to show you the cabling of it all
+
+
 

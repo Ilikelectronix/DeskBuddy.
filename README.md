@@ -46,6 +46,8 @@ Touch button: GND TO GND VDD to 3.3 volts I/O to Digital Pin 34
 Oled 0'96 GND TO GND VCC TO 3,3 volts SDA Digital PIN 21 (I2C) SCL Digital Pin 22 (I2C)
 
 
+
+
 Now you may be wondering: "How do i use this thing" i got you 
 to navigate trought the functions you will touch the normal button
 to interact with the function you will need to touch the touch button.

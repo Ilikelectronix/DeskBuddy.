@@ -1,5 +1,6 @@
 # DeskBuddy.
 READ ALL OF THIS BEFORE INSTALLING ANYTHING
+
 The DeskBuddy is an accessory that can be put wherever you want,it can be powered from your standard PC as its powered by an Esp32 Dev module
 
 
@@ -37,6 +38,18 @@ where it says "Put the password of your SSID" put the password of your SSID
 
 
 Now im going to show you the cabling of it all
+<img width="461" height="346" alt="image" src="https://github.com/user-attachments/assets/4403cdb6-a14c-4f41-90b0-4b51276e400b" />
+
+
+Button: Pin 1 GND Pin 2 Digital pin 14
+Touch button: GND TO GND VDD to 3.3 volts I/O to Digital Pin 34
+Oled 0'96 GND TO GND VCC TO 3,3 volts SDA Digital PIN 21 (I2C) SCL Digital Pin 22 (I2C)
+
+
+Now you may be wondering: "How do i use this thing" i got you 
+to navigate trought the functions you will touch the normal button
+to interact with the function you will need to touch the touch button.
+
 
 
 

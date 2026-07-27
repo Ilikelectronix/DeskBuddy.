@@ -1,0 +1,371 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <WiFi.h>
+#include "time.h"
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ========================================================
+// 🔑 WIFI CREDENTIALS
+// ========================================================
+const char* ssid     = "your ssid";
+const char* password = "password of your ssid";
+
+// ========================================================
+// 🔘 PIN SETUP
+// ========================================================
+const int BTN_SCROLL = 14; 
+const int BTN_TOUCH  = 34; 
+
+// ========================================================
+// 📊 STATO DI SISTEMA E MENU
+// ========================================================
+int currentMenu = 0;
+const int TOTAL_MENUS = 6; // Ridotto a 6 menu
+
+unsigned long lastActivityTime = 0;
+const unsigned long STANDBY_TIMEOUT = 60000;
+bool isStandby = false;
+
+// NTP Time Server
+const char* ntpServer = "pool.ntp.org";
+
+// Timer Pomodoro (24h)
+unsigned long pomodoroStart = 0;
+unsigned long pomodoroElapsedPaused = 0;
+bool pomodoroRunning = false;
+unsigned long pomodoroTotalSeconds = 86400;
+
+// Gioco Dino
+int dinoY = 42;
+int obstacleX = 128;
+bool isJumping = false;
+int jumpStage = 0;
+int score = 0;
+bool gameOver = false;
+
+// Testa o Croce
+String coinResult = "PREMI TOUCH";
+
+// DeskBuddy / Tamagotchi
+unsigned long lastPetTime = 0;
+const unsigned long TWELVE_HOURS_MS = 43200000;
+bool justPettedAnim = false;
+unsigned long pettedAnimTimer = 0;
+
+// Prototipi Funzioni
+void handleTouchActions(unsigned long pressDuration);
+void drawClockHeader();
+void drawMeteo();
+void drawWiFi();
+void drawPomodoro();
+void updateAndDrawDino();
+void drawCoinFlip();
+void drawFace();
+void drawStandby();
+
+// ========================================================
+// ⚙️ SETUP
+// ========================================================
+void setup() {
+  Serial.begin(115200);
+
+  // Modalità veloce I2C (400kHz)
+  Wire.begin();
+  Wire.setClock(400000);
+
+  randomSeed(analogRead(36));
+
+  pinMode(BTN_SCROLL, INPUT_PULLUP);
+  pinMode(BTN_TOUCH, INPUT);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    for (;;);
+  }
+
+  display.setTextWrap(true);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 10);
+  display.println("Connecting WiFi...");
+  display.display();
+
+  WiFi.begin(ssid, password);
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 15) {
+    delay(500);
+    attempts++;
+  }
+
+  configTime(3600, 3600, ntpServer);
+  lastActivityTime = millis();
+  lastPetTime = millis();
+}
+
+// ========================================================
+// 🔄 LOOP PRINCIPALE
+// ========================================================
+void loop() {
+  unsigned long now = millis();
+
+  bool scrollPressed = (digitalRead(BTN_SCROLL) == LOW);
+  bool touchPressed  = (digitalRead(BTN_TOUCH) == HIGH);
+
+  if (scrollPressed || touchPressed) {
+    if (isStandby) isStandby = false;
+    lastActivityTime = now;
+  }
+
+  if (!isStandby && (now - lastActivityTime > STANDBY_TIMEOUT)) {
+    isStandby = true;
+  }
+
+  // Tasto SCROLL (GPIO 14)
+  static unsigned long lastScroll = 0;
+  if (scrollPressed && (now - lastScroll > 250)) {
+    if (!isStandby) {
+      currentMenu = (currentMenu + 1) % TOTAL_MENUS;
+    }
+    lastScroll = now;
+  }
+
+  // Tasto TOUCH (GPIO 34)
+  static unsigned long touchStartTime = 0;
+  static bool touchWasPressed = false;
+
+  if (touchPressed && !touchWasPressed) {
+    touchStartTime = now;
+    touchWasPressed = true;
+  } else if (!touchPressed && touchWasPressed) {
+    unsigned long pressDuration = now - touchStartTime;
+    if (!isStandby && pressDuration > 20) {
+      handleTouchActions(pressDuration);
+    }
+    touchWasPressed = false;
+  }
+
+  if (justPettedAnim && (now - pettedAnimTimer > 2000)) {
+    justPettedAnim = false;
+  }
+
+  display.clearDisplay();
+
+  if (isStandby) {
+    drawStandby();
+  } else {
+    drawClockHeader();
+
+    switch (currentMenu) {
+      case 0: drawMeteo(); break;
+      case 1: drawWiFi(); break;
+      case 2: drawPomodoro(); break;
+      case 3: updateAndDrawDino(); break;
+      case 4: drawCoinFlip(); break;
+      case 5: drawFace(); break;
+    }
+  }
+
+  display.display();
+  delay(10);
+}
+
+// ========================================================
+// 👆 AZIONI PULSANTE TOUCH
+// ========================================================
+void handleTouchActions(unsigned long pressDuration) {
+  if (currentMenu == 2) { // Timer Pomodoro
+    if (pressDuration >= 1500) {
+      pomodoroRunning = false;
+      pomodoroElapsedPaused = 0;
+    } else {
+      if (pomodoroRunning) {
+        pomodoroElapsedPaused += (millis() - pomodoroStart) / 1000;
+        pomodoroRunning = false;
+      } else {
+        pomodoroStart = millis();
+        pomodoroRunning = true;
+      }
+    }
+  }
+  else if (currentMenu == 3) { // Dino Game
+    if (gameOver) {
+      gameOver = false;
+      score = 0;
+      obstacleX = 128;
+      dinoY = 42;
+    } else if (!isJumping) {
+      isJumping = true;
+    }
+  }
+  else if (currentMenu == 4) { // Testa o Croce
+    if (random(0, 100) % 2 == 0) {
+      coinResult = "HEADS!";
+    } else {
+      coinResult = "TAILS!";
+    }
+  }
+  else if (currentMenu == 5) { // Tamagotchi
+    lastPetTime = millis();
+    justPettedAnim = true;
+    pettedAnimTimer = millis();
+  }
+}
+
+// ========================================================
+// 🎨 GRAFICA E SCHERMATE
+// ========================================================
+void drawClockHeader() {
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    char timeStr[6];
+    strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+    display.setTextSize(1);
+    display.setCursor(95, 0);
+    display.print(timeStr);
+  }
+}
+
+void drawMeteo() {
+  display.setCursor(0, 0); display.print("WEATHER");
+  display.setCursor(0, 10); display.println("--------------------");
+  display.setCursor(0, 25); display.setTextSize(2); display.print("21.5 C");
+  display.setTextSize(1); display.setCursor(0, 48); display.print("Sunny");
+}
+
+void drawWiFi() {
+  display.setCursor(0, 0); display.print("WIFI TEST");
+  display.setCursor(0, 10); display.println("--------------------");
+  display.setCursor(0, 22);
+  if (WiFi.status() == WL_CONNECTED) {
+    long rssi = WiFi.RSSI();
+    int quality = 2 * (rssi + 100);
+    if (quality > 100) quality = 100;
+    if (quality < 0) quality = 0;
+
+    display.print("SSID: "); display.println(WiFi.SSID());
+    display.print("Signal: "); display.print(quality); display.println("%");
+    display.print("RSSI: "); display.print(rssi); display.println(" dBm");
+  } else {
+    display.println("Disconnected");
+  }
+}
+
+void drawPomodoro() {
+  display.setCursor(0, 0); display.print("TIMER (24H)");
+  display.setCursor(0, 10); display.println("--------------------");
+
+  unsigned long totalElapsed = pomodoroElapsedPaused;
+  if (pomodoroRunning) {
+    totalElapsed += (millis() - pomodoroStart) / 1000;
+  }
+
+  long remaining = pomodoroTotalSeconds - totalElapsed;
+  if (remaining <= 0) {
+    remaining = 0;
+    pomodoroRunning = false;
+  }
+
+  int hours   = remaining / 3600;
+  int minutes = (remaining % 3600) / 60;
+  int seconds = remaining % 60;
+
+  display.setCursor(15, 23); 
+  display.setTextSize(2);
+  display.printf("%02d:%02d:%02d", hours, minutes, seconds);
+
+  display.setTextSize(1); 
+  display.setCursor(0, 48); 
+  display.print("Touch:Start|Hold:Reset");
+}
+
+void updateAndDrawDino() {
+  display.setCursor(0, 0); display.print("DINO");
+  display.setCursor(48, 0); display.print("S:"); display.print(score);
+
+  if (gameOver) {
+    display.setCursor(30, 28);
+    display.setTextSize(1);
+    display.println("GAME OVER!");
+    display.setCursor(10, 42);
+    display.println("[Touch to Reset]");
+    return;
+  }
+
+  if (isJumping) {
+    if (jumpStage < 5) dinoY -= 3;
+    else if (jumpStage < 10) dinoY += 3;
+    jumpStage++;
+    if (jumpStage >= 10) { jumpStage = 0; isJumping = false; dinoY = 42; }
+  }
+
+  obstacleX -= 4;
+  if (obstacleX < 0) { 
+    obstacleX = 128; 
+    score++; 
+  }
+
+  if (obstacleX <= 18 && obstacleX >= 8 && dinoY >= 36) {
+    gameOver = true;
+  }
+
+  display.fillRect(10, dinoY, 8, 12, SSD1306_WHITE);
+  display.fillRect(obstacleX, 44, 6, 10, SSD1306_WHITE);
+  display.drawFastHLine(0, 54, 128, SSD1306_WHITE);
+}
+
+void drawCoinFlip() {
+  display.setCursor(0, 0); display.print("COIN FLIP");
+  display.setCursor(0, 10); display.println("--------------------");
+  display.setCursor(10, 30); display.setTextSize(2);
+  display.println(coinResult);
+}
+
+void drawFace() {
+  display.setCursor(0, 0); display.print("DESKBUDDY");
+
+  bool isSad = (millis() - lastPetTime > TWELVE_HOURS_MS);
+
+  if (justPettedAnim) {
+    display.setCursor(30, 18); display.setTextSize(2); display.print("^");
+    display.setCursor(80, 18); display.print("^");
+    display.drawCircle(64, 42, 12, SSD1306_WHITE);
+    display.fillRect(50, 30, 30, 12, SSD1306_BLACK);
+    
+    display.setTextSize(1);
+    display.setCursor(20, 55); display.print("<3 THANKS! <3");
+  } 
+  else if (isSad) {
+    display.fillRect(30, 24, 12, 10, SSD1306_WHITE);
+    display.fillRect(80, 24, 12, 10, SSD1306_WHITE);
+    display.drawCircle(64, 55, 10, SSD1306_WHITE);
+    display.fillRect(50, 55, 30, 10, SSD1306_BLACK);
+
+    display.setTextSize(1);
+    display.setCursor(15, 0); display.print("[SAD...]");
+    display.setCursor(10, 56); display.print("Pet me!");
+  } 
+  else {
+    display.fillRect(30, 20, 12, 18, SSD1306_WHITE);
+    display.fillRect(80, 20, 12, 18, SSD1306_WHITE);
+    display.fillRect(50, 48, 28, 4, SSD1306_WHITE);
+
+    display.setTextSize(1);
+    display.setCursor(10, 56); display.print("Touch = Pet");
+  }
+}
+
+void drawStandby() {
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    char timeStr[6];
+    strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+    display.setTextSize(2); display.setCursor(34, 20); display.print(timeStr);
+  }
+  display.setTextSize(1); display.setCursor(20, 48);
+  display.println("Press button...");
+}
